@@ -205,15 +205,22 @@ PR: https://github.com/{repo}/pull/{pr_number}
     # Add instructions
     prompt += f"""## 🎯 What I Need Help With
 
-Please help me:
+Please help me address these review comments systematically:
 
 1. **Analyze** each comment and identify the specific issues raised
-2. **Prioritize** the changes needed (critical bugs → improvements → style)
-3. **Provide** specific code changes to address each concern
+2. **Prioritize** the changes needed (critical bugs → improvements → style)  
+3. **Implement** specific code changes to address each concern
 4. **Explain** how each change addresses the reviewer's feedback
+
+**Working Mode Instructions:**
+- Use **Edit Mode** for direct file modifications across multiple files
+- Use **@workspace** to understand the full codebase context
+- Start with the most critical issues first
+- Make changes incrementally and explain each one
 
 ## Context:
 - PR Link: https://github.com/{repo}/pull/{pr_number}
+- Repository: {repo}
 """
     
     if username:
@@ -235,9 +242,10 @@ def main():
         description='Extract PR comments for Copilot',
         epilog="""
 Examples:
-  %(prog)s https://github.com/cbsi-cmg/ngcms/pull/937#pullrequestreview-2940750819 --user john-doe
-  %(prog)s 937 --user jane-smith --repo owner/repo
-  %(prog)s https://github.com/owner/repo/pull/123
+  %(prog)s https://github.com/cbsi-cmg/ngcms/pull/937#pullrequestreview-2940750819 --user john-doe --chat
+  %(prog)s 937 --user jane-smith --repo owner/repo --open --chat  
+  %(prog)s https://github.com/owner/repo/pull/123 --no-copy
+  %(prog)s 456 --repo owner/repo --output custom_prompt.md
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -248,6 +256,8 @@ Examples:
     parser.add_argument('--output', '-o', help='Output file', default=None)
     parser.add_argument('--copy', action='store_true', help='Copy to clipboard')
     parser.add_argument('--open', action='store_true', help='Open in VSCode', default=True)
+    parser.add_argument('--no-copy', action='store_true', help='Skip auto-copying to clipboard')
+    parser.add_argument('--chat', action='store_true', help='Try to open Copilot Chat automatically')
     
     args = parser.parse_args()
     
@@ -313,19 +323,85 @@ Examples:
         # Open in VSCode if available and requested
         if args.open:
             try:
-                subprocess.run(['code', output_file], check=True)
-                print("📝 Opened in VSCode")
-                
-                # Also try to open relevant files
+                # Get all files from PR diff
+                all_files = []
                 try:
                     result = subprocess.run(['gh', 'pr', 'diff', pr_number, '--repo', repo, '--name-only'], 
                                           capture_output=True, text=True, check=True)
-                    files = result.stdout.strip().split('\n')[:5]  # First 5 files
-                    if files and files[0]:  # Check if we got any files
-                        subprocess.run(['code'] + files, check=False)
-                        print(f"📂 Opened {len(files)} files from PR diff")
-                except:
-                    pass  # Ignore errors opening PR files
+                    pr_files = [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
+                    
+                    # Filter out non-existent files and add to list
+                    for file in pr_files:
+                        if Path(file).exists():
+                            all_files.append(file)
+                    
+                    if all_files:
+                        print(f"📂 Found {len(all_files)} files from PR diff")
+                    else:
+                        print("📂 No PR files found in current directory")
+                        
+                except Exception as e:
+                    print(f"⚠️  Could not get PR files: {e}")
+                
+                # Open VSCode with all files
+                vscode_files = [output_file] + all_files
+                
+                # For Cursor/VSCode, open with workspace context
+                if all_files:
+                    # Try to open in a workspace context
+                    subprocess.run(['code', '.'] + vscode_files, check=True)
+                    print(f"📝 Opened workspace with {len(vscode_files)} files")
+                else:
+                    # Fallback to just opening the prompt file
+                    subprocess.run(['code', output_file], check=True)
+                    print("📝 Opened prompt file in VSCode")
+                
+                # Auto-copy to clipboard for easy pasting into Copilot (unless disabled)
+                if not args.no_copy:
+                    try:
+                        import pyperclip
+                        pyperclip.copy(prompt)
+                        print("📋 Prompt auto-copied to clipboard - paste into Copilot Chat!")
+                    except ImportError:
+                        print("💡 Install pyperclip for auto-clipboard: pip install pyperclip")
+                
+                # Try to open Copilot Chat automatically if requested
+                if args.chat:
+                    try:
+                        # Try to trigger Copilot Chat via VSCode command
+                        import time
+                        time.sleep(2)  # Give VSCode time to fully open
+                        
+                        # Use VSCode command to open Copilot Chat
+                        subprocess.run([
+                            'code', '--command', 'workbench.panel.chat.view.copilot.focus'
+                        ], check=False)
+                        print("🤖 Attempted to open Copilot Chat automatically")
+                    except Exception as e:
+                        print(f"⚠️  Could not auto-open Copilot Chat: {e}")
+                        print("   Manually open with Ctrl+Alt+I / Cmd+Ctrl+I")
+                
+                # Create a .copilot-instructions.md file for better context
+                copilot_instructions = f"""# PR Review Context
+
+This workspace contains files from PR #{pr_number} in {repo}.
+
+## Files to Review:
+{chr(10).join(f'- {file}' for file in all_files) if all_files else '- No files found in current directory'}
+
+## Next Steps:
+1. The prompt has been copied to your clipboard
+2. Open Copilot Chat (Ctrl+Alt+I or Cmd+Ctrl+I)
+3. Paste the prompt to start the code review process
+4. Use @workspace to give Copilot full context of the codebase
+
+## Tip:
+Use "Edit Mode" in Copilot Chat for direct file modifications across multiple files.
+"""
+                
+                copilot_file = Path(".copilot-instructions.md")
+                copilot_file.write_text(copilot_instructions)
+                print("📋 Created .copilot-instructions.md for workspace context")
                     
             except (subprocess.CalledProcessError, FileNotFoundError):
                 print("📝 VSCode not available, prompt saved to file")
@@ -341,10 +417,20 @@ Examples:
             print(f"  - {comment_type}: {count}")
         
         print(f"\n🎯 Next steps:")
-        print(f"1. Review the generated prompt in {output_file}")
-        print(f"2. Copy-paste it into GitHub Copilot Chat in VSCode")
-        print(f"3. Ask Copilot to work through the issues systematically")
-        print(f"\n💡 Pro tip: Use '@workspace' in Copilot Chat for more context about your codebase")
+        if args.open:
+            print(f"1. VSCode/Cursor is now open with all relevant files")
+            print(f"2. Open Copilot Chat (Ctrl+Alt+I / Cmd+Ctrl+I)")
+            print(f"3. Paste the prompt (already copied to clipboard)")
+            print(f"4. Use 'Edit Mode' for direct file modifications")
+            print(f"\n💡 Pro tips:")
+            print(f"   • Use '@workspace' for full codebase context")
+            print(f"   • Check .copilot-instructions.md for workspace context")
+            print(f"   • Switch to 'Agent Mode' for autonomous multi-file edits")
+        else:
+            print(f"1. Review the generated prompt in {output_file}")
+            print(f"2. Copy-paste it into GitHub Copilot Chat in VSCode")
+            print(f"3. Ask Copilot to work through the issues systematically")
+            print(f"\n💡 Pro tip: Use '@workspace' in Copilot Chat for more context about your codebase")
         
     except ValueError as e:
         print(f"❌ Error: {e}")

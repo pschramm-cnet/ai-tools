@@ -162,15 +162,22 @@ A watch on () => version.value.type should suffice (or typeName if you do the ni
 
 ## 🎯 What I Need Help With
 
-Please help me:
+Please help me address these review comments systematically:
 
 1. **Analyze** each comment and identify the specific issues raised
-2. **Prioritize** the changes needed (critical bugs → improvements → style)
-3. **Provide** specific code changes to address each concern
+2. **Prioritize** the changes needed (critical bugs → improvements → style)  
+3. **Implement** specific code changes to address each concern
 4. **Explain** how each change addresses the reviewer's feedback
+
+**Working Mode Instructions:**
+- Use **Edit Mode** for direct file modifications across multiple files
+- Use **@workspace** to understand the full codebase context
+- Start with the most critical issues first
+- Make changes incrementally and explain each one
 
 ## Context:
 - PR Link: https://github.com/cbsi-cmg/ngcms/pull/937
+- Repository: cbsi-cmg/ngcms
 - Specific review: https://github.com/cbsi-cmg/ngcms/pull/937#pullrequestreview-2940750819
 
 Focus on actionable changes I can implement immediately. If any comment is unclear, please ask for clarification on what specific change is needed.
